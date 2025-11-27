@@ -6,23 +6,23 @@
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PASSWORD;
 
-const unsigned long MAX_ECHO_TIME_US = 30000UL; // 30ms => ~517cm (beyond sensor spec but safe)
-const char *mqtt_server = "maisonneuve.aws.thinger.io";  // Your broker hostname
-const int mqtt_port = 1883;
+//const unsigned long MAX_ECHO_TIME_US = 30000UL; // 30ms => ~517cm (beyond sensor spec but safe)
+//const char *mqtt_server = "maisonneuve.aws.thinger.io";  // Your broker hostname
+//const int mqtt_port = 1883;
 
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 
-void callback(char* topic, byte* payload, unsigned int length) {
+/*void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Topic: "); Serial.println(topic);
   String msg;
   for (unsigned int i = 0; i < length; i++) {
     msg += (char)payload[i];
   }
   Serial.print("Payload: "); Serial.println(msg);
-}
+}*/
 
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
+/*void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.print("MQTT msg on [");
   Serial.print(topic);
   Serial.print("]: ");
@@ -32,15 +32,15 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   if (String(topic) == "capter") {
     if (length == 1 && payload[0] == '1') {
       Serial.println("Turning LED ON");
-      digitalWrite(LED_PIN, HIGH);
+     // digitalWrite(LED_PIN, HIGH);
     } else {
       Serial.println("Turning LED OFF");
-      digitalWrite(LED_PIN, LOW);
+     // digitalWrite(LED_PIN, LOW);
     }
   }
-}
+}*/
 
-const char* mqttStateToString(int8_t state) {
+/*const char* mqttStateToString(int8_t state) {
   switch (state) {
     case -4: return "MQTT_CONNECTION_TIMEOUT";
     case -3: return "MQTT_CONNECTION_LOST";
@@ -54,7 +54,7 @@ const char* mqttStateToString(int8_t state) {
     case 5: return "MQTT_CONNECT_UNAUTHORIZED";
     default: return "MQTT_UNKNOWN";
   }
-}
+}*/
 
 String translateEncryptionType(wifi_auth_mode_t encryptionType) {
   switch (encryptionType) {
@@ -79,7 +79,7 @@ void connectToNetwork() {
   Serial.println("Connected to network");
 }
 
-void reconnect() {
+/*void reconnect() {
   int retries = 0;
   while (!client.connected() && retries < 3) {
     Serial.print("Attempting MQTT connection...");
@@ -101,7 +101,7 @@ void reconnect() {
       delay(5000);
     }
   }
-}
+}*/
 
 void setup() {
   Serial.begin(115200);
@@ -109,8 +109,8 @@ void setup() {
   pinMode(6, INPUT);
   digitalWrite(5, LOW);
   delay(100);
-  Serial.println("HC-SR04 test starting");
-  Serial.println("\nStarting ESP32 MQTT Client");
+  //Serial.println("HC-SR04 test starting");
+ // Serial.println("\nStarting ESP32 MQTT Client");
   
   WiFi.mode(WIFI_STA);
   
@@ -119,13 +119,13 @@ void setup() {
   Serial.print("Connected to WiFi, IP: ");
   Serial.println(WiFi.localIP());
   
-  client.setServer(mqtt_server, mqtt_port);
-  client.setCallback(callback);
+  //client.setServer(mqtt_server, mqtt_port);
+ // client.setCallback(callback);
   
-  reconnect();
+  //reconnect();
 }
 
-long readUltrasonic_cm() {
+/*long readUltrasonic_cm() {
   digitalWrite(5, LOW);
   delayMicroseconds(2);
   digitalWrite(5, HIGH);
@@ -139,7 +139,7 @@ long readUltrasonic_cm() {
 
   long distance_cm = (long)(duration / 58.0);
   return distance_cm;
-}
+}*/
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -147,7 +147,7 @@ void loop() {
     connectToNetwork();
   }
   
-  if (!client.connected()) {
+ /* if (!client.connected()) {
     reconnect();
   }
   
@@ -160,7 +160,7 @@ void loop() {
     snprintf(payload, sizeof(payload), "{\"distance_cm\":%ld}", dist);
   }
   client.publish("outTopic2", payload);
-  delay(1000);
+  delay(1000);*/
   
   delay(10);
 }
