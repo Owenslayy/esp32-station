@@ -68,15 +68,78 @@ String translateEncryptionType(wifi_auth_mode_t encryptionType) {
   }
 }
 
+/* Function to display WiFi connection errors */
+void showWiFiError(wl_status_t status) {
+  Serial.print("WiFi Error: ");
+  switch (status) {
+    case WL_NO_SHIELD:
+      Serial.println("NO_SHIELD - WiFi shield not present");
+      break;
+    case WL_IDLE_STATUS:
+      Serial.println("IDLE_STATUS - WiFi is in idle mode");
+      break;
+    case WL_NO_SSID_AVAIL:
+      Serial.println("NO_SSID_AVAIL - Configured SSID cannot be reached");
+      Serial.println("  → Check if SSID name is correct");
+      Serial.println("  → Check if router is powered on and in range");
+      break;
+    case WL_SCAN_COMPLETED:
+      Serial.println("SCAN_COMPLETED - WiFi scan completed");
+      break;
+    case WL_CONNECTED:
+      Serial.println("CONNECTED - Successfully connected to WiFi");
+      break;
+    case WL_CONNECT_FAILED:
+      Serial.println("CONNECT_FAILED - Connection failed");
+      Serial.println("  → Check WiFi password");
+      Serial.println("  → Check network security type");
+      Serial.println("  → Try restarting the router");
+      break;
+    case WL_CONNECTION_LOST:
+      Serial.println("CONNECTION_LOST - Connection was lost");
+      Serial.println("  → Signal may be too weak");
+      Serial.println("  → Router may have restarted");
+      break;
+    case WL_DISCONNECTED:
+      Serial.println("DISCONNECTED - Disconnected from network");
+      Serial.println("  → Check if credentials are correct");
+      Serial.println("  → Check if MAC filtering is enabled on router");
+      break;
+    default:
+      Serial.print("UNKNOWN STATUS - Code: ");
+      Serial.println(status);
+      break;
+  }
+}
+/*fonction qui permet de se connecter au réseau WiFi*/
 void connectToNetwork() {
   WiFi.begin(ssid, password);
-
-  while (WiFi.status() != WL_CONNECTED) {
+  Serial.println("Connecting to WiFi...");
+  
+  int attempts = 0;
+  const int maxAttempts = 20; // 20 seconds timeout
+  
+  /* Attente de la connexion */
+  while (WiFi.status() != WL_CONNECTED && attempts < maxAttempts) {
     delay(1000);
-    Serial.println("Establishing connection to WiFi..");
+    attempts++;
+    Serial.print(".");
+    
+    // Check status every 5 seconds
+    if (attempts % 5 == 0) {
+      Serial.println();
+      showWiFiError(WiFi.status());
+    }
   }
-
-  Serial.println("Connected to network");
+  
+  Serial.println();
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("Connected to network");
+  } else {
+    Serial.println("Failed to connect to WiFi after timeout");
+    showWiFiError(WiFi.status());
+  }
 }
 
 /*void reconnect() {
@@ -143,9 +206,11 @@ void setup() {
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi connection lost, reconnecting...");
+    Serial.println("WiFi connection lost!");
+    showWiFiError(WiFi.status());
+    Serial.println("Reconnecting...");
     connectToNetwork();
-  }
+  }// si la connexion WiFi est perdue, on se reconnecte
   
  /* if (!client.connected()) {
     reconnect();
