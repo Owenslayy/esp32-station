@@ -113,6 +113,234 @@ void showWiFiError(wl_status_t status) {
   }
 }
 
+/* Helper function to extract a value from JSON by key */
+String extractJsonValue(String json, String key) {
+  String searchKey = "\"" + key + "\"";
+  int keyIndex = json.indexOf(searchKey);
+  
+  if (keyIndex == -1) {
+    return "NOT_FOUND";
+  }
+  
+  // Find the colon after the key
+  int colonIndex = json.indexOf(":", keyIndex);
+  if (colonIndex == -1) return "ERROR";
+  
+  // Skip whitespace and find the value
+  int valueStart = colonIndex + 1;
+  while (valueStart < json.length() && (json.charAt(valueStart) == ' ' || json.charAt(valueStart) == '\t')) {
+    valueStart++;
+  }
+  
+  // Check if value is a string (starts with ")
+  if (json.charAt(valueStart) == '"') {
+    valueStart++; // Skip opening quote
+    int valueEnd = json.indexOf('"', valueStart);
+    if (valueEnd == -1) return "ERROR";
+    return json.substring(valueStart, valueEnd);
+  }
+  // Check if value is an object or array
+  else if (json.charAt(valueStart) == '{' || json.charAt(valueStart) == '[') {
+    char endChar = (json.charAt(valueStart) == '{') ? '}' : ']';
+    int depth = 1;
+    int valueEnd = valueStart + 1;
+    while (valueEnd < json.length() && depth > 0) {
+      if (json.charAt(valueEnd) == json.charAt(valueStart)) depth++;
+      if (json.charAt(valueEnd) == endChar) depth--;
+      valueEnd++;
+    }
+    return json.substring(valueStart, valueEnd);
+  }
+  // Value is a number, boolean, or null
+  else {
+    int valueEnd = valueStart;
+    while (valueEnd < json.length() && 
+           json.charAt(valueEnd) != ',' && 
+           json.charAt(valueEnd) != '}' && 
+           json.charAt(valueEnd) != ']' &&
+           json.charAt(valueEnd) != ' ') {
+      valueEnd++;
+    }
+    return json.substring(valueStart, valueEnd);
+  }
+}
+
+/* Function to parse and display JSON response in readable format */
+void parseAndDisplayJson(String json) {
+  Serial.println("\n=== Parsed Data (Readable Format) ===");
+  
+  json.trim();
+  
+  // Parse top-level keys only, then handle nested objects separately
+  int pos = 1; // Start after opening {
+  
+  while (pos < json.length()) {
+    // Find the next key
+    int keyStart = json.indexOf('"', pos);
+    if (keyStart == -1) break;
+    
+    int keyEnd = json.indexOf('"', keyStart + 1);
+    if (keyEnd == -1) break;
+    
+    String key = json.substring(keyStart + 1, keyEnd);
+    
+    //trouve les deux-points après la clé
+    int colon = json.indexOf(':', keyEnd);
+    if (colon == -1) break;
+    
+    // saute les espaces après les deux-points
+    int valueStart = colon + 1;
+    while (valueStart < json.length() && (json.charAt(valueStart) == ' ' || json.charAt(valueStart) == '\t')) {
+      valueStart++;
+    }
+    
+    // Check what type of value this is
+    if (json.charAt(valueStart) == '{') {
+      // Nested object - extract it
+      int depth = 1;
+      int valueEnd = valueStart + 1;
+      while (valueEnd < json.length() && depth > 0) {
+        if (json.charAt(valueEnd) == '{') depth++;
+        if (json.charAt(valueEnd) == '}') depth--;
+        valueEnd++;
+      }
+      String nestedObj = json.substring(valueStart + 1, valueEnd - 1);
+      
+      // Print the key
+      Serial.print("  ");
+      Serial.print(key);
+      Serial.println(":");
+      
+      // Parse nested object
+      int nestedPos = 0;
+      while (nestedPos < nestedObj.length()) {
+        int nKeyStart = nestedObj.indexOf('"', nestedPos);
+        if (nKeyStart == -1) break;
+        
+        int nKeyEnd = nestedObj.indexOf('"', nKeyStart + 1);
+        if (nKeyEnd == -1) break;
+        
+        String nestedKey = nestedObj.substring(nKeyStart + 1, nKeyEnd);
+        
+        // Find the colon after the key
+        int nColon = nestedObj.indexOf(':', nKeyEnd);
+        if (nColon == -1) break;
+        
+        // Skip whitespace after colon
+        int nValueStart = nColon + 1;
+        while (nValueStart < nestedObj.length() && 
+               (nestedObj.charAt(nValueStart) == ' ' || nestedObj.charAt(nValueStart) == '\t')) {
+          nValueStart++;
+        }
+        
+        // Extract the value
+        String nestedValue;
+        if (nestedObj.charAt(nValueStart) == '"') {
+          // String value
+          int nValueEnd = nestedObj.indexOf('"', nValueStart + 1);
+          if (nValueEnd == -1) break;
+          nestedValue = nestedObj.substring(nValueStart + 1, nValueEnd);
+          nestedPos = nValueEnd + 1;
+        } else {
+          // Number, boolean, or null
+          int nValueEnd = nValueStart;
+          while (nValueEnd < nestedObj.length() && 
+                 nestedObj.charAt(nValueEnd) != ',' && 
+                 nestedObj.charAt(nValueEnd) != '}' && 
+                 nestedObj.charAt(nValueEnd) != ' ') {
+            nValueEnd++;
+          }
+          nestedValue = nestedObj.substring(nValueStart, nValueEnd);
+          nestedValue.trim();
+          nestedPos = nValueEnd + 1;
+        }
+        
+        Serial.print("    - ");
+        Serial.print(nestedKey);
+        Serial.print(": ");
+        Serial.println(nestedValue);
+      }
+      
+      pos = valueEnd;
+    } else if (json.charAt(valueStart) == '"') {
+      // String value
+      int valueEnd = json.indexOf('"', valueStart + 1);
+      if (valueEnd == -1) break;
+      
+      String value = json.substring(valueStart + 1, valueEnd);
+      Serial.print("  ");
+      Serial.print(key);
+      Serial.print(": ");
+      Serial.println(value);
+      
+      pos = valueEnd + 1;
+    } else {
+      // Number, boolean, or null
+      int valueEnd = valueStart;
+      while (valueEnd < json.length() && 
+             json.charAt(valueEnd) != ',' && 
+             json.charAt(valueEnd) != '}' && 
+             json.charAt(valueEnd) != ' ') {
+        valueEnd++;
+      }
+      
+      String value = json.substring(valueStart, valueEnd);
+      value.trim();
+      Serial.print("  ");
+      Serial.print(key);
+      Serial.print(": ");
+      Serial.println(value);
+      
+      pos = valueEnd + 1;
+    }
+  }
+  
+  Serial.println("=====================================\n");
+}
+
+/* Example: Get specific values from JSON response */
+void getSpecificData(const char* url, String key1, String key2 = "", String key3 = "") {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    
+    Serial.println("\n--- Getting Specific Data ---");
+    http.begin(url);
+    int httpResponseCode = http.GET();
+    
+    if (httpResponseCode == 200) {
+      String payload = http.getString();
+      
+      // Extract and display specific values
+      if (key1 != "") {
+        String value1 = extractJsonValue(payload, key1);
+        Serial.print(key1);
+        Serial.print(" = ");
+        Serial.println(value1);
+      }
+      
+      if (key2 != "") {
+        String value2 = extractJsonValue(payload, key2);
+        Serial.print(key2);
+        Serial.print(" = ");
+        Serial.println(value2);
+      }
+      
+      if (key3 != "") {
+        String value3 = extractJsonValue(payload, key3);
+        Serial.print(key3);
+        Serial.print(" = ");
+        Serial.println(value3);
+      }
+      
+    } else {
+      Serial.print("Error: ");
+      Serial.println(httpResponseCode);
+    }
+    
+    http.end();
+  }
+}
+
 /* Function to send HTTP GET request */
 void sendHTTPGet(const char* url) {
   if (WiFi.status() == WL_CONNECTED) {
@@ -145,6 +373,81 @@ void sendHTTPGet(const char* url) {
   }
 }
 
+/* Function to send HTTP GET request and parse response */
+void sendHTTPGetParsed(const char* url) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    
+    Serial.println("\n--- HTTP GET Request (Parsed) ---");
+    Serial.print("URL: ");
+    Serial.println(url);
+    Serial.print("WiFi Status: Connected, IP: ");
+    Serial.println(WiFi.localIP());
+    
+    // Set timeout to 10 seconds
+    http.setTimeout(10000);
+    
+    // Try to begin connection
+    Serial.println("Starting HTTP connection...");
+    bool beginResult = http.begin(url);
+    
+    if (!beginResult) {
+      Serial.println("ERROR: Failed to begin HTTP connection!");
+      Serial.println("This could mean:");
+      Serial.println("  - Invalid URL format");
+      Serial.println("  - DNS lookup failed");
+      Serial.println("  - Network issue");
+      http.end();
+      return;
+    }
+    
+    Serial.println("HTTP connection established, sending GET request...");
+    int httpResponseCode = http.GET();
+    
+    if (httpResponseCode > 0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      
+      String payload = http.getString();
+      
+      // Display raw JSON
+      Serial.println("\n--- Raw JSON Response ---");
+      Serial.println(payload);
+      
+      // Parse and display in readable format
+      parseAndDisplayJson(payload);
+      
+    } else {
+      Serial.print("Error code: ");
+      Serial.println(httpResponseCode);
+      Serial.print("Error description: ");
+      Serial.println(http.errorToString(httpResponseCode));
+      
+      // Detailed error explanations
+      Serial.println("\nPossible causes:");
+      if (httpResponseCode == -1) {
+        Serial.println("  → Connection refused by server");
+        Serial.println("  → Check if URL is correct");
+        Serial.println("  → Server might be down");
+        Serial.println("  → Try using HTTPS if available");
+      } else if (httpResponseCode == -2) {
+        Serial.println("  → Failed to send header");
+      } else if (httpResponseCode == -3) {
+        Serial.println("  → Failed to connect to server");
+        Serial.println("  → DNS lookup may have failed");
+      } else if (httpResponseCode == -11) {
+        Serial.println("  → Request timeout (server didn't respond)");
+      }
+    }
+    
+    http.end();
+  } else {
+    Serial.println("WiFi not connected!");
+    Serial.print("WiFi Status: ");
+    Serial.println(WiFi.status());
+  }
+}
+
 /* Function to send HTTP POST request with JSON data */
 void sendHTTPPost(const char* url, const char* jsonData) {
   if (WiFi.status() == WL_CONNECTED) {
@@ -161,7 +464,7 @@ void sendHTTPPost(const char* url, const char* jsonData) {
     
     int httpResponseCode = http.POST(jsonData);  // envoi la requete
     
-    /*if (httpResponseCode > 0) {
+    if (httpResponseCode > 0) {
       Serial.print("HTTP Response code: ");
       Serial.println(httpResponseCode);
       
@@ -172,7 +475,7 @@ void sendHTTPPost(const char* url, const char* jsonData) {
       Serial.print("Error code: ");
       Serial.println(httpResponseCode);
       Serial.println("Error: " + http.errorToString(httpResponseCode));
-    }*/
+    }
     
     http.end();  // Free resources
   } else {
@@ -218,34 +521,36 @@ void sendHTTPRequest(const char* url, const char* method, const char* data = nul
       return;
     }
     // recoit le code de connection (par exemple 200 pour OK, 404 pour erreur)
-    //if (httpResponseCode > 0) {
+    if (httpResponseCode > 0) {
       Serial.print("HTTP Response code: ");
       Serial.println(httpResponseCode);
       
       String response = http.getString();
       Serial.println("Response:");
       Serial.println(response);
-    } 
-    else if(httpResponseCode ==404) {
-      Serial.println("Error 404: Not Found");
-      while(1);
-    }
-    else if(httpResponseCode ==400) {
-      Serial.println("Error 400: Bad Request");
-    }
-    else if(httpResponseCode ==401) {
-      Serial.println("Error 401: Unauthorized");
-      while(1);
-    }
-    else if(httpResponseCode ==402) {
-      Serial.println("Error 402: Payment Required");
-      while(1);
-    }
-    else {
+    } else if(httpResponseCode == -1) {
+      Serial.println("Connection failed");
+    } else if(httpResponseCode == -2) {
+      Serial.println("Error: Send header failed");
+    } else if(httpResponseCode == -3) {
+      Serial.println("Error: Send payload failed");
+    } else if(httpResponseCode == -4) {
+      Serial.println("Error: Not connected");
+      while(true);
+    } else if(httpResponseCode == -11) {
+      Serial.println("Error: Read timeout");
+      while(true);
+    } else if(httpResponseCode == 400) {
+      Serial.println("Error: Bad Request");
+      while(true);
+    } else if(httpResponseCode == 404) {
+      Serial.println("Error: Not Found");
+      while(true);
+    } else {
       Serial.print("Error code: ");
       Serial.println(httpResponseCode);
       Serial.println("Error: " + http.errorToString(httpResponseCode));
-      while(1);
+      while(true);// boucle infinie en cas d'erreur non gérée
     }
     
     http.end();
@@ -325,11 +630,19 @@ void setup() {
   
   Serial.print("Connected to WiFi, IP: ");
   Serial.println(WiFi.localIP());
+  Serial.print("Gateway: ");
+  Serial.println(WiFi.gatewayIP());
+  Serial.print("DNS: ");
+  Serial.println(WiFi.dnsIP());
+  
+  // Wait a bit for DNS to be fully ready
+  Serial.println("Waiting for network to stabilize...");
+  delay(2000);
   
 
   
-  // fait la requete a un API publique
-   sendHTTPGet("http://api.open-non");
+  // Request to a public API - ISS location tracker
+  sendHTTPGetParsed("http://api.open-notify.org/iss-now.json");
   
 
   
