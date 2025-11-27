@@ -2,6 +2,7 @@
 #include "secrets.h"
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <HTTPClient.h>
 
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PASSWORD;
@@ -111,6 +112,136 @@ void showWiFiError(wl_status_t status) {
       break;
   }
 }
+
+/* Function to send HTTP GET request */
+void sendHTTPGet(const char* url) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    
+    Serial.println("\n--- HTTP GET Request ---");
+    Serial.print("URL: ");
+    Serial.println(url);
+    
+    http.begin(url);  // Specify the URL
+    
+    int httpResponseCode = http.GET();  // Send the request
+    
+    if (httpResponseCode > 0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      
+      String payload = http.getString();  // Get the response payload
+      Serial.println("Response:");
+      Serial.println(payload);
+    } else {
+      Serial.print("Error code: ");
+      Serial.println(httpResponseCode);
+      Serial.println("Error: " + http.errorToString(httpResponseCode));
+    }
+    
+    http.end();  // Free resources
+  } else {
+    Serial.println("WiFi not connected!");
+  }
+}
+
+/* Function to send HTTP POST request with JSON data */
+void sendHTTPPost(const char* url, const char* jsonData) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    
+    Serial.println("\n--- HTTP POST Request ---");
+    Serial.print("URL: ");
+    Serial.println(url);
+    Serial.print("Data: ");
+    Serial.println(jsonData);
+    
+    http.begin(url);  // specifier le url
+    http.addHeader("Content-Type", "application/json");  // specify le type de contenu
+    
+    int httpResponseCode = http.POST(jsonData);  // envoi la requete
+    
+    /*if (httpResponseCode > 0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      
+      String response = http.getString();  //recoit la reponse
+      Serial.println("Response:");
+      Serial.println(response);
+    } else {
+      Serial.print("Error code: ");
+      Serial.println(httpResponseCode);
+      Serial.println("Error: " + http.errorToString(httpResponseCode));
+    }*/
+    
+    http.end();  // Free resources
+  } else {
+    Serial.println("WiFi not connected!");
+  }
+}
+
+/* fonction qui envoie une requête HTTP */
+void sendHTTPRequest(const char* url, const char* method, const char* data = nullptr, const char* authToken = nullptr) {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    
+    Serial.println("\n--- HTTP Request ---");
+    Serial.print("Method: ");
+    Serial.println(method);
+    Serial.print("URL: ");
+    Serial.println(url);
+    
+    http.begin(url);
+    
+    // Ajout d'une autorisation si le token est fourni
+    if (authToken != nullptr) {
+      String authHeader = "Bearer ";
+      authHeader += authToken;
+      http.addHeader("Authorization", authHeader);
+    }
+    
+    int httpResponseCode;
+    
+    if (strcmp(method, "GET") == 0) {
+      httpResponseCode = http.GET();
+    } else if (strcmp(method, "POST") == 0) {
+      http.addHeader("Content-Type", "application/json");
+      httpResponseCode = http.POST(data ? data : "");
+    } else if (strcmp(method, "PUT") == 0) {
+      http.addHeader("Content-Type", "application/json");
+      httpResponseCode = http.PUT(data ? data : "");
+    } else if (strcmp(method, "DELETE") == 0) {
+      httpResponseCode = http.sendRequest("DELETE");
+    } else {
+      Serial.println("Unsupported HTTP method");
+      http.end();
+      return;
+    }
+    // recoit le code de connection (par exemple 200 pour OK, 404 pour erreur)
+    if (httpResponseCode > 0) {
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      
+      String response = http.getString();
+      Serial.println("Response:");
+      Serial.println(response);
+    } 
+    else if(httpResponseCode ==404) {
+      Serial.println("Error 404: Not Found");
+    }
+    else {
+      Serial.print("Error code: ");
+      Serial.println(httpResponseCode);
+      Serial.println("Error: " + http.errorToString(httpResponseCode));
+      while(1);
+    }
+    
+    http.end();
+  } else {
+    Serial.println("WiFi not connected!");
+  }
+}
+
 /*fonction qui permet de se connecter au réseau WiFi*/
 void connectToNetwork() {
   WiFi.begin(ssid, password);
@@ -168,6 +299,7 @@ void connectToNetwork() {
 
 void setup() {
   Serial.begin(115200);
+  while(!Serial); // Attendre que la connexion série soit établie
   pinMode(5, OUTPUT);
   pinMode(6, INPUT);
   digitalWrite(5, LOW);
@@ -182,10 +314,17 @@ void setup() {
   Serial.print("Connected to WiFi, IP: ");
   Serial.println(WiFi.localIP());
   
+
+  
+  // fait la requete a un API publique
+   sendHTTPGet("http://api.open-non");
+  
+
+  
   //client.setServer(mqtt_server, mqtt_port);
  // client.setCallback(callback);
   
-  //reconnect();
+  //reconnect();http://api.open-notify.org/iss-now.json
 }
 
 /*long readUltrasonic_cm() {
@@ -207,7 +346,7 @@ void setup() {
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi connection lost!");
-    showWiFiError(WiFi.status());
+    showWiFiError(WiFi.status());// afficher les erreurs de connexion WiFi
     Serial.println("Reconnecting...");
     connectToNetwork();
   }// si la connexion WiFi est perdue, on se reconnecte
