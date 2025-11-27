@@ -14,6 +14,18 @@ const char *password = WIFI_PASSWORD;
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 
+// Structure to store ISS position data
+struct ISSData {
+  String message;        // API response status
+  float latitude;        // ISS latitude
+  float longitude;       // ISS longitude
+  unsigned long timestamp; // Unix timestamp
+  bool dataValid;        // Whether we have valid data
+};
+
+// Global variable to store the latest ISS data
+ISSData issData = {"", 0.0, 0.0, 0, false};
+
 /*void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Topic: "); Serial.println(topic);
   String msg;
@@ -298,6 +310,36 @@ void parseAndDisplayJson(String json) {
   Serial.println("=====================================\n");
 }
 
+/* Function to extract and store ISS data from JSON response */
+void extractAndStoreISSData(String json) {
+  // Extract the values
+  String message = extractJsonValue(json, "message");
+  String latStr = extractJsonValue(json, "latitude");
+  String lonStr = extractJsonValue(json, "longitude");
+  String timestampStr = extractJsonValue(json, "timestamp");
+  
+  // Store in global structure
+  issData.message = message;
+  issData.latitude = latStr.toFloat();
+  issData.longitude = lonStr.toFloat();
+  issData.timestamp = timestampStr.toInt();
+  issData.dataValid = (message == "success");
+  
+  // Print confirmation
+  Serial.println("\n>>> Data stored in 'issData' structure:");
+  Serial.print("    issData.message = ");
+  Serial.println(issData.message);
+  Serial.print("    issData.latitude = ");
+  Serial.println(issData.latitude, 4);
+  Serial.print("    issData.longitude = ");
+  Serial.println(issData.longitude, 4);
+  Serial.print("    issData.timestamp = ");
+  Serial.println(issData.timestamp);
+  Serial.print("    issData.dataValid = ");
+  Serial.println(issData.dataValid ? "true" : "false");
+  Serial.println();
+}
+
 /* Example: Get specific values from JSON response */
 void getSpecificData(const char* url, String key1, String key2 = "", String key3 = "") {
   if (WiFi.status() == WL_CONNECTED) {
@@ -401,12 +443,53 @@ void sendHTTPGetParsed(const char* url) {
       return;
     }
     
+    // Collect response headers
+    const char* headerKeys[] = {"Content-Type", "Content-Length", "Server", "Date", "Connection", "Cache-Control"};
+    const size_t headerKeysCount = sizeof(headerKeys) / sizeof(headerKeys[0]);
+    http.collectHeaders(headerKeys, headerKeysCount);
+    
     Serial.println("HTTP connection established, sending GET request...");
     int httpResponseCode = http.GET();
     
     if (httpResponseCode > 0) {
       Serial.print("HTTP Response code: ");
       Serial.println(httpResponseCode);
+      
+      // Display response headers
+      Serial.println("\n--- HTTP Response Headers ---");
+      
+      // Get common headers
+      if (http.hasHeader("Content-Type")) {
+        Serial.print("Content-Type: ");
+        Serial.println(http.header("Content-Type"));
+      }
+      
+      if (http.hasHeader("Content-Length")) {
+        Serial.print("Content-Length: ");
+        Serial.println(http.header("Content-Length"));
+      }
+      
+      if (http.hasHeader("Server")) {
+        Serial.print("Server: ");
+        Serial.println(http.header("Server"));
+      }
+      
+      if (http.hasHeader("Date")) {
+        Serial.print("Date: ");
+        Serial.println(http.header("Date"));
+      }
+      
+      if (http.hasHeader("Connection")) {
+        Serial.print("Connection: ");
+        Serial.println(http.header("Connection"));
+      }
+      
+      if (http.hasHeader("Cache-Control")) {
+        Serial.print("Cache-Control: ");
+        Serial.println(http.header("Cache-Control"));
+      }
+      
+      Serial.println("-----------------------------");
       
       String payload = http.getString();
       
@@ -416,6 +499,9 @@ void sendHTTPGetParsed(const char* url) {
       
       // Parse and display in readable format
       parseAndDisplayJson(payload);
+      
+      // Extract and store the data
+      extractAndStoreISSData(payload);
       
     } else {
       Serial.print("Error code: ");
@@ -643,6 +729,36 @@ void setup() {
   
   // Request to a public API - ISS location tracker
   sendHTTPGetParsed("http://api.open-notify.org/iss-now.json");
+  
+  // Example: Using the stored data
+  Serial.println("\n=== EXAMPLE: Using stored ISS data ===");
+  if (issData.dataValid) {
+    Serial.print("The ISS is currently at coordinates: ");
+    Serial.print(issData.latitude, 4);
+    Serial.print(", ");
+    Serial.println(issData.longitude, 4);
+    
+    // Example calculations
+    Serial.print("Distance from equator: ");
+    Serial.print(abs(issData.latitude));
+    Serial.println(" degrees");
+    
+    // Determine hemisphere
+    Serial.print("Hemisphere: ");
+    if (issData.latitude >= 0) {
+      Serial.print("Northern (");
+    } else {
+      Serial.print("Southern (");
+    }
+    if (issData.longitude >= 0) {
+      Serial.println("Eastern)");
+    } else {
+      Serial.println("Western)");
+    }
+  } else {
+    Serial.println("No valid ISS data available yet.");
+  }
+  Serial.println("======================================\n");
   
 
   
