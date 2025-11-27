@@ -229,6 +229,15 @@ void sendHTTPRequest(const char* url, const char* method, const char* data = nul
     else if(httpResponseCode ==404) {
       Serial.println("Error 404: Not Found");
     }
+    else if(httpResponseCode ==400) {
+      Serial.println("Error 400: Bad Request");
+    }
+    else if(httpResponseCode ==401) {
+      Serial.println("Error 401: Unauthorized");
+    }
+    else if(httpResponseCode ==402) {
+      Serial.println("Error 402: Payment Required");
+    }
     else {
       Serial.print("Error code: ");
       Serial.println(httpResponseCode);
