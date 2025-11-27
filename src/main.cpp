@@ -218,7 +218,7 @@ void sendHTTPRequest(const char* url, const char* method, const char* data = nul
       return;
     }
     // recoit le code de connection (par exemple 200 pour OK, 404 pour erreur)
-    if (httpResponseCode > 0) {
+    //if (httpResponseCode > 0) {
       Serial.print("HTTP Response code: ");
       Serial.println(httpResponseCode);
       
@@ -228,15 +228,18 @@ void sendHTTPRequest(const char* url, const char* method, const char* data = nul
     } 
     else if(httpResponseCode ==404) {
       Serial.println("Error 404: Not Found");
+      while(1);
     }
     else if(httpResponseCode ==400) {
       Serial.println("Error 400: Bad Request");
     }
     else if(httpResponseCode ==401) {
       Serial.println("Error 401: Unauthorized");
+      while(1);
     }
     else if(httpResponseCode ==402) {
       Serial.println("Error 402: Payment Required");
+      while(1);
     }
     else {
       Serial.print("Error code: ");
