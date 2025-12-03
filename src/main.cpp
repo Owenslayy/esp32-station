@@ -26,16 +26,16 @@ struct ISSData {
 // Global variable to store the latest ISS data
 ISSData issData = {"", 0.0, 0.0, 0, false};
 
-/*void callback(char* topic, byte* payload, unsigned int length) {
+void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Topic: "); Serial.println(topic);
   String msg;
   for (unsigned int i = 0; i < length; i++) {
     msg += (char)payload[i];
   }
   Serial.print("Payload: "); Serial.println(msg);
-}*/
+}
 
-/*void mqttCallback(char* topic, byte* payload, unsigned int length) {
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.print("MQTT msg on [");
   Serial.print(topic);
   Serial.print("]: ");
@@ -51,9 +51,9 @@ ISSData issData = {"", 0.0, 0.0, 0, false};
      // digitalWrite(LED_PIN, LOW);
     }
   }
-}*/
+}
 
-/*const char* mqttStateToString(int8_t state) {
+const char* mqttStateToString(int8_t state) {
   switch (state) {
     case -4: return "MQTT_CONNECTION_TIMEOUT";
     case -3: return "MQTT_CONNECTION_LOST";
@@ -67,7 +67,7 @@ ISSData issData = {"", 0.0, 0.0, 0, false};
     case 5: return "MQTT_CONNECT_UNAUTHORIZED";
     default: return "MQTT_UNKNOWN";
   }
-}*/
+}
 
 String translateEncryptionType(wifi_auth_mode_t encryptionType) {
   switch (encryptionType) {
@@ -502,6 +502,8 @@ void sendHTTPGetParsed(const char* url) {
       
       // Extract and store the data
       extractAndStoreISSData(payload);
+
+   
       
     } else {
       Serial.print("Error code: ");
@@ -808,4 +810,42 @@ void loop() {
   delay(1000);*/
   
   delay(10);
+}
+
+// MQTT helpers
+void mqttReconnect() {
+  if (client.connected()) return;
+
+  Serial.print("Attempting MQTT connection...");
+  String clientId = "esp32-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+
+  bool ok;
+  if (MQTT_USER[0] != '\0') {
+    ok = client.connect(clientId.c_str(), MQTT_USER, MQTT_PASSWORD);
+  } else {
+    ok = client.connect(clientId.c_str());
+  }
+
+  if (ok) {
+    Serial.println("connected");
+  } else {
+    Serial.print("failed, rc="); Serial.println(client.state());
+  }
+}
+
+void publishCoordinates(const ISSData& data) {
+  if (!client.connected()) {
+    mqttReconnect();
+  }
+  if (!client.connected()) {
+    Serial.println("MQTT not connected; cannot publish coordinates");
+    return;
+  }
+
+  char payload[128];
+  snprintf(payload, sizeof(payload), "{\"latitude\":%.6f,\"longitude\":%.6f,\"timestamp\":%lu}", data.latitude, data.longitude, data.timestamp);
+
+  bool res = client.publish(MQTT_TOPIC_COORDS, payload);
+  Serial.print("Publish "); Serial.print(MQTT_TOPIC_COORDS); Serial.print(": "); Serial.println(payload);
+  Serial.print("Publish result: "); Serial.println(res ? "OK" : "FAIL");
 }
