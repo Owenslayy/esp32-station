@@ -8,12 +8,14 @@ const char *ssid = WIFI_SSID;
 const char *password = WIFI_PASSWORD;
 
 
-const char *mqtt_server = "maisonneuve.aws.thinger.io";  // Your broker hostname
-const int mqtt_port = 1883;
+// Use values from secrets.h so they can be configured centrally
+const char *mqtt_server = MQTT_SERVER;  // Your broker hostname (from secrets.h)
+const int mqtt_port = MQTT_PORT;
 
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
-
+void mqttReconnect() ;
+void publishCoordinates(const struct ISSData& data);
 // Structure to store ISS position data
 struct ISSData {
   String message;        // API response status
@@ -25,6 +27,13 @@ struct ISSData {
 
 // Global variable to store the latest ISS data
 ISSData issData = {"", 0.0, 0.0, 0, false};
+
+// Timing for periodic ISS API polling
+unsigned long lastFetchMillis = 0;
+const unsigned long fetchIntervalMs = 10000; // fetch every 10s
+
+// Track last published ISS timestamp so we only publish when data changes
+unsigned long lastPublishedTimestamp = 0;
 
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Topic: "); Serial.println(topic);
@@ -678,29 +687,7 @@ void connectToNetwork() {
   }
 }
 
-/*void reconnect() {
-  int retries = 0;
-  while (!client.connected() && retries < 3) {
-    Serial.print("Attempting MQTT connection...");
-    String clientId = "esp2Ow";
-    clientId += String((uint32_t)ESP.getEfuseMac(), HEX);
-    
-    if (client.connect("esp2Ow", "owen2", "Certif24@")) {
-      Serial.println("connected");
-      client.subscribe("inTopic");
-    } else {
-      int state = client.state();
-      Serial.print("failed, rc=");
-      Serial.print(state);
-      Serial.print(" (");
-      Serial.print(mqttStateToString(state));
-      Serial.println(")");
-      Serial.println("Retrying in 5 seconds...");
-      retries++;
-      delay(5000);
-    }
-  }
-}*/
+// removed old reconnect() - use mqttReconnect() instead
 
 void setup() {
   Serial.begin(115200);
@@ -765,7 +752,8 @@ void setup() {
 
   
   client.setServer(mqtt_server, mqtt_port);
- // client.setCallback(callback);
+  // enable MQTT message callback
+  client.setCallback(callback);
   
   //reconnect();http://api.open-notify.org/iss-now.json
 }
@@ -773,52 +761,71 @@ void setup() {
 
 
 void loop() {
+  // Ensure WiFi stays connected
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("WiFi connection lost!");
-    showWiFiError(WiFi.status());// afficher les erreurs de connexion WiFi
+    showWiFiError(WiFi.status()); // afficher les erreurs de connexion WiFi
     Serial.println("Reconnecting...");
     connectToNetwork();
-  }// si la connexion WiFi est perdue, on se reconnecte
-  
- /* if (!client.connected()) {
-    reconnect();
+    // Give time to reconnect
+    delay(1000);
+    return;
   }
-  
+
+  // Ensure MQTT connection
+  if (!client.connected()) {
+    mqttReconnect();
+  }
+
+  // Let the MQTT client process incoming messages and keep the connection alive
   client.loop();
-  long dist = readUltrasonic_cm();
-  char payload[64];
-  if (dist < 0) {
-    snprintf(payload, sizeof(payload), "{\"distance_cm\":null,\"note\":\"pas_echo\"}");
-  } else {
-    snprintf(payload, sizeof(payload), "{\"distance_cm\":%ld}", dist);
+
+  // Publish coordinates only when connected
+  // Periodically fetch the ISS API every 10 seconds
+  if (millis() - lastFetchMillis >= fetchIntervalMs) {
+    lastFetchMillis = millis();
+    sendHTTPGetParsed("http://api.open-notify.org/iss-now.json");
   }
-  client.publish("outTopic2", payload);
-  delay(1000);*/
-  
-  delay(10);
+
+  // Publish only when we have new data
+  if (client.connected() && issData.dataValid && issData.timestamp != lastPublishedTimestamp) {
+    publishCoordinates(issData);
+    lastPublishedTimestamp = issData.timestamp;
+  }
+
+  delay(1000);
 }
 
-// MQTT helpers
+// MQTT reconnect helper using credentials from secrets.h
 void mqttReconnect() {
   if (client.connected()) return;
 
   Serial.print("Attempting MQTT connection...");
   String clientId = "esp32-" + String((uint32_t)ESP.getEfuseMac(), HEX);
 
-  bool ok;
+  bool connected;
+  // Print which clientId and username we'll try (do NOT print the password)
+  // Use a static clientId as requested
+  const char* staticClientId = "esp2Ow";
+  Serial.print("MQTT clientId: "); Serial.println(staticClientId);
+  Serial.print("MQTT username: "); Serial.println(MQTT_USER[0] ? MQTT_USER : "(none)");
+
   if (MQTT_USER[0] != '\0') {
-    ok = client.connect("esp2Ow", MQTT_USER, MQTT_PASSWORD);
+    connected = client.connect(staticClientId, MQTT_USER, MQTT_PASSWORD);
   } else {
-    ok = client.connect("esp2Ow");
+    connected = client.connect(staticClientId);
   }
 
-  if (ok) {
+  if (connected) {
     Serial.println("connected");
+    Serial.println("connected (no subscriptions)");
   } else {
-    Serial.print("failed, rc="); Serial.println(client.state());
+    int state = client.state();
+    Serial.print("failed, rc="); Serial.print(state);
+    Serial.print(" ("); Serial.print(mqttStateToString(state)); Serial.println(")");
   }
 }
-
+// fonction qui publie les coordonnées de l'ISS via MQTT
 void publishCoordinates(const ISSData& data) {
   if (!client.connected()) {
     mqttReconnect();
