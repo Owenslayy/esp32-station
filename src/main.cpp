@@ -7,9 +7,9 @@
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PASSWORD;
 
-//const unsigned long MAX_ECHO_TIME_US = 30000UL; // 30ms => ~517cm (beyond sensor spec but safe)
-//const char *mqtt_server = "maisonneuve.aws.thinger.io";  // Your broker hostname
-//const int mqtt_port = 1883;
+
+const char *mqtt_server = "maisonneuve.aws.thinger.io";  // Your broker hostname
+const int mqtt_port = 1883;
 
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
@@ -35,7 +35,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Payload: "); Serial.println(msg);
 }
 
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
+/*void mqttCallback(char* topic, byte* payload, unsigned int length) {
   Serial.print("MQTT msg on [");
   Serial.print(topic);
   Serial.print("]: ");
@@ -51,8 +51,8 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
      // digitalWrite(LED_PIN, LOW);
     }
   }
-}
-
+}*/
+// fonction qui monntre l'etat de la connection mqtt
 const char* mqttStateToString(int8_t state) {
   switch (state) {
     case -4: return "MQTT_CONNECTION_TIMEOUT";
@@ -709,7 +709,7 @@ void setup() {
   pinMode(6, INPUT);
   digitalWrite(5, LOW);
   delay(100);
-  //Serial.println("HC-SR04 test starting");
+ 
  // Serial.println("\nStarting ESP32 MQTT Client");
   
   WiFi.mode(WIFI_STA);
@@ -764,27 +764,13 @@ void setup() {
   
 
   
-  //client.setServer(mqtt_server, mqtt_port);
+  client.setServer(mqtt_server, mqtt_port);
  // client.setCallback(callback);
   
   //reconnect();http://api.open-notify.org/iss-now.json
 }
 
-/*long readUltrasonic_cm() {
-  digitalWrite(5, LOW);
-  delayMicroseconds(2);
-  digitalWrite(5, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(5, LOW);
 
-  unsigned long duration = pulseIn(6, HIGH, MAX_ECHO_TIME_US);
-  if (duration == 0) {
-    return -1;
-  }
-
-  long distance_cm = (long)(duration / 58.0);
-  return distance_cm;
-}*/
 
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -821,9 +807,9 @@ void mqttReconnect() {
 
   bool ok;
   if (MQTT_USER[0] != '\0') {
-    ok = client.connect(clientId.c_str(), MQTT_USER, MQTT_PASSWORD);
+    ok = client.connect("esp2Ow", MQTT_USER, MQTT_PASSWORD);
   } else {
-    ok = client.connect(clientId.c_str());
+    ok = client.connect("esp2Ow");
   }
 
   if (ok) {
