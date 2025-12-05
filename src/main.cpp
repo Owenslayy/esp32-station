@@ -3,9 +3,19 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <HTTPClient.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
 
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PASSWORD;
+
+// ESP-NOW peer MAC address (replace with your receiver's MAC address)
+// You can find MAC address by printing WiFi.macAddress() on the receiver
+uint8_t receiverMacAddress[] = {0xCC, 0xBA, 0x97, 0x16, 0x2A, 0xF8}; // Broadcast address - change to specific MAC
+
+// ESP-NOW variables
+esp_now_peer_info_t peerInfo;
+bool espNowInitialized = false;
 
 
 // Use values from secrets.h so they can be configured centrally
@@ -34,6 +44,140 @@ const unsigned long fetchIntervalMs = 10000; // fetch every 10s
 
 // Track last published ISS timestamp so we only publish when data changes
 unsigned long lastPublishedTimestamp = 0;
+
+// Timing for ESP-NOW sends
+unsigned long lastESPNowSendMillis = 0;
+const unsigned long espnowSendIntervalMs = 2000; // send every 2 seconds
+
+// ========== ESP-NOW Functions ==========
+
+// Callback when data is sent via ESP-NOW
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.println("\n========== ESP-NOW CALLBACK ==========");
+  Serial.print("[ESP-NOW] Packet sent to: ");
+  for (int i = 0; i < 6; i++) {
+    Serial.printf("%02X", mac_addr[i]);
+    if (i < 5) Serial.print(":");
+  }
+  Serial.println();
+  
+  Serial.print("[ESP-NOW] Send Status: ");
+  if (status == ESP_NOW_SEND_SUCCESS) {
+    Serial.println("SUCCESS - Data delivered!");
+  } else {
+    Serial.println("FAILED - Data not delivered!");
+  }
+  Serial.println("======================================\n");
+}
+
+// Initialize ESP-NOW
+bool initESPNow() {
+  // Init ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("[ESP-NOW] Error initializing ESP-NOW");
+    return false;
+  }
+  
+  Serial.println("[ESP-NOW] Successfully initialized");
+  
+  // Register send callback
+  esp_now_register_send_cb(OnDataSent);
+  
+  // Get the current WiFi channel
+  uint8_t currentChannel = WiFi.channel();
+  Serial.print("[ESP-NOW] Current WiFi Channel: ");
+  Serial.println(currentChannel);
+  
+  // Register peer
+  memcpy(peerInfo.peer_addr, receiverMacAddress, 6);
+  peerInfo.channel = currentChannel;  // Use actual WiFi channel
+  peerInfo.encrypt = false;
+  
+  // Add peer
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("[ESP-NOW] Failed to add peer");
+    return false;
+  }
+  
+  Serial.println("[ESP-NOW] Peer added successfully");
+  Serial.print("[ESP-NOW] Peer channel set to: ");
+  Serial.println(peerInfo.channel);
+  Serial.print("[ESP-NOW] Receiver MAC: ");
+  for (int i = 0; i < 6; i++) {
+    Serial.printf("%02X", receiverMacAddress[i]);
+    if (i < 5) Serial.print(":");
+  }
+  Serial.println();
+  
+  return true;
+}
+
+// Send JSON data via ESP-NOW
+void sendJsonViaESPNow(String jsonData) {
+  if (!espNowInitialized) {
+    Serial.println("[ESP-NOW] ESP-NOW not initialized, skipping send");
+    return;
+  }
+  
+  // Check WiFi status
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[ESP-NOW] WARNING: WiFi not connected!");
+  }
+  
+  // Verify we're on the right channel
+  Serial.print("[ESP-NOW] Current WiFi channel: ");
+  Serial.println(WiFi.channel());
+  
+  // ESP-NOW has a limit of 250 bytes per packet
+  if (jsonData.length() > 250) {
+    Serial.println("[ESP-NOW] Warning: JSON data exceeds 250 bytes, truncating...");
+    jsonData = jsonData.substring(0, 250);
+  }
+  
+  Serial.println("\n[ESP-NOW] Sending JSON data...");
+  Serial.print("[ESP-NOW] Data length: ");
+  Serial.print(jsonData.length());
+  Serial.println(" bytes");
+  Serial.print("[ESP-NOW] Target MAC: ");
+  for (int i = 0; i < 6; i++) {
+    Serial.printf("%02X", receiverMacAddress[i]);
+    if (i < 5) Serial.print(":");
+  }
+  Serial.println();
+  Serial.print("[ESP-NOW] Data: ");
+  Serial.println(jsonData);
+  Serial.flush(); // Ensure all data is sent to serial before ESP-NOW send
+  
+  // Send data
+  esp_err_t result = esp_now_send(receiverMacAddress, (uint8_t *)jsonData.c_str(), jsonData.length());
+  
+  if (result == ESP_OK) {
+    Serial.println("[ESP-NOW] Data sent successfully (queued)");
+    Serial.println("[ESP-NOW] Waiting for send callback...");
+    Serial.flush(); // Flush before delay
+    delay(250); // Give callback time to execute and display
+  } else {
+    Serial.println("[ESP-NOW] Error sending data");
+    Serial.print("[ESP-NOW] Error code: ");
+    Serial.println(result);
+    
+    // Detailed error descriptions
+    if (result == ESP_ERR_ESPNOW_NOT_INIT) {
+      Serial.println("[ESP-NOW] ESP-NOW not initialized");
+    } else if (result == ESP_ERR_ESPNOW_ARG) {
+      Serial.println("[ESP-NOW] Invalid argument");
+    } else if (result == ESP_ERR_ESPNOW_INTERNAL) {
+      Serial.println("[ESP-NOW] Internal error");
+    } else if (result == ESP_ERR_ESPNOW_NO_MEM) {
+      Serial.println("[ESP-NOW] Out of memory");
+    } else if (result == ESP_ERR_ESPNOW_NOT_FOUND) {
+      Serial.println("[ESP-NOW] Peer not found");
+    }
+  }
+  Serial.flush(); // Final flush
+}
+
+// ========== End ESP-NOW Functions ==========
 
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Topic: "); Serial.println(topic);
@@ -506,6 +650,8 @@ void sendHTTPGetParsed(const char* url) {
       Serial.println("\n--- Raw JSON Response ---");
       Serial.println(payload);
       
+      // NOTE: ESP-NOW send moved to publishCoordinates() for compact format
+      
       // Parse and display in readable format
       parseAndDisplayJson(payload);
       
@@ -658,8 +804,15 @@ void sendHTTPRequest(const char* url, const char* method, const char* data = nul
 
 /*fonction qui permet de se connecter au réseau WiFi*/
 void connectToNetwork() {
-  WiFi.begin(ssid, password);
   Serial.println("Connecting to WiFi...");
+  Serial.println("Note: Channel will be determined by the router");
+  
+  // Configure WiFi to station mode first
+  WiFi.mode(WIFI_STA);
+  
+  // Connect without forcing channel (router determines the channel)
+  WiFi.begin(ssid, password);
+  Serial.println("Connecting to WiFi network...");
   
   int attempts = 0;
   const int maxAttempts = 20; // 20 seconds timeout
@@ -681,6 +834,8 @@ void connectToNetwork() {
   
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("Connected to network");
+    Serial.print("WiFi Channel: ");
+    Serial.println(WiFi.channel());
   } else {
     Serial.println("Failed to connect to WiFi after timeout");
     showWiFiError(WiFi.status());
@@ -699,7 +854,7 @@ void setup() {
  
  // Serial.println("\nStarting ESP32 MQTT Client");
   
-  WiFi.mode(WIFI_STA);
+  // WiFi mode will be set in connectToNetwork()
   
   connectToNetwork();
   
@@ -709,6 +864,21 @@ void setup() {
   Serial.println(WiFi.gatewayIP());
   Serial.print("DNS: ");
   Serial.println(WiFi.dnsIP());
+  Serial.print("WiFi Channel: ");
+  Serial.println(WiFi.channel());
+  
+  // Print this ESP32's MAC address
+  Serial.print("This ESP32 MAC Address: ");
+  Serial.println(WiFi.macAddress());
+  
+  // Initialize ESP-NOW
+  Serial.println("\n[ESP-NOW] Initializing ESP-NOW...");
+  espNowInitialized = initESPNow();
+  if (espNowInitialized) {
+    Serial.println("[ESP-NOW] Ready to send data!");
+  } else {
+    Serial.println("[ESP-NOW] Initialization failed, will not send data");
+  }
   
   // Wait a bit for DNS to be fully ready
   Serial.println("Waiting for network to stabilize...");
@@ -792,8 +962,24 @@ void loop() {
     publishCoordinates(issData);
     lastPublishedTimestamp = issData.timestamp;
   }
-
-  delay(1000);
+  
+  // Send ESP-NOW data every 2 seconds (independent of MQTT)
+  if (millis() - lastESPNowSendMillis >= espnowSendIntervalMs) {
+    lastESPNowSendMillis = millis();
+    
+    if (espNowInitialized && issData.dataValid) {
+      // Create compact JSON payload
+      char payload[128];
+      snprintf(payload, sizeof(payload), "{\"latitude\":%.6f,\"longitude\":%.6f,\"timestamp\":%lu}", 
+               issData.latitude, issData.longitude, issData.timestamp);
+      
+      Serial.println("\n[ESP-NOW] Periodic send (every 2 seconds)...");
+      String espnowPayload = String(payload);
+      sendJsonViaESPNow(espnowPayload);
+    }
+  }
+  
+  delay(100); // Reduced delay for more responsive timing
 }
 
 // MQTT reconnect helper using credentials from secrets.h
@@ -841,4 +1027,6 @@ void publishCoordinates(const ISSData& data) {
   bool res = client.publish(MQTT_TOPIC_COORDS, payload);
   Serial.print("Publish "); Serial.print(MQTT_TOPIC_COORDS); Serial.print(": "); Serial.println(payload);
   Serial.print("Publish result: "); Serial.println(res ? "OK" : "FAIL");
+  
+  // Note: ESP-NOW sends are now handled in loop() every 2 seconds
 }
